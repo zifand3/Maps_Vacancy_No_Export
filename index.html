@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Address</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <script src="search2.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDJpECFECrlCJGhwE6nDY6DRvnWni8xFp0&libraries=places&language=en"></script>
+  </head>
+  <body class="m-8">
+    <div
+      id="cardContainer"
+      class="flex flex-wrap justify-center max-w-4xl mx-auto"
+    ></div>
+    <img src="images/logo.png" alt="Logo" class="w-48" />
+
+    <input
+      type="file"
+      id="fileInput"
+      accept=".csv, .xlsx"
+      class="border p-2 mb-4"
+    />
+
+    <button
+      onclick="processFile()"
+      class="hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+      style="background-color: #007ace"
+    >
+      Process
+    </button>
+    <button
+      onclick="exportToCSV()"
+      class="hover:bg-green-700 text-white font-bold py-2 px-4 rounded my-4"
+      style="background-color: #ff7f00"
+    >
+      Export CSV
+    </button>
+    <button
+      onclick="toggleModal()"
+      class="hover:bg-gray-700 text-white font-bold py-2 px-4 rounded my-4"
+      style="background-color: #4a5568"
+    >
+      Show Details
+    </button>
+
+    <table
+      class="min-w-full mt-6 border-collapse border border-gray-400"
+      id="dataTable"
+    >
+      <thead>
+        <tr>
+          <th class="border border-gray-300 p-2 bg-gray-200">address</th>
+          <th class="border border-gray-300 p-2 bg-gray-200">occupant</th>
+          <th class="border border-gray-300 p-2 bg-gray-200">
+            occupant address
+          </th>
+          <th class="border border-gray-300 p-2 bg-gray-200">operation</th>
+          <th class="border border-gray-300 p-2 bg-gray-200">coordinate</th>
+          <th class="border border-gray-300 p-2 bg-gray-200">
+            Business Status
+          </th>
+        </tr>
+      </thead>
+      <tbody id="results" class="text-sm"></tbody>
+    </table>
+
+    <div id="modal" class="hidden fixed z-50 inset-0 overflow-y-auto">
+      <div class="flex items-center justify-center min-h-screen">
+        <div class="bg-white rounded-lg p-8 shadow-lg w-full max-w-8xl">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-2xl font-bold">Occupant</h2>
+            <button
+              onclick="toggleModal()"
+              class="text-gray-700 hover:text-gray-900"
+            >
+              &times;
+            </button>
+          </div>
+          <table
+            class="min-w-full border-collapse border border-gray-400"
+            id="dataTable2"
+          >
+            <thead>
+              <tr>
+                <th class="border border-gray-300 p-2 bg-gray-200">
+                  Year Built
+                </th>
+                <th class="border border-gray-300 p-2 bg-gray-200">Size</th>
+                <th class="border border-gray-300 p-2 bg-gray-200">Space</th>
+                <th class="border border-gray-300 p-2 bg-gray-200">Term</th>
+                <th class="border border-gray-300 p-2 bg-gray-200">
+                  Rental Rate
+                </th>
+                <th class="border border-gray-300 p-2 bg-gray-200">
+                  Space Use
+                </th>
+                <th class="border border-gray-300 p-2 bg-gray-200">
+                  Available
+                </th>
+                <th class="border border-gray-300 p-2 bg-gray-200">Street</th>
+                <th class="border border-gray-300 p-2 bg-gray-200">State</th>
+                <th class="border border-gray-300 p-2 bg-gray-200">Category</th>
+                <th class="border border-gray-300 p-2 bg-gray-200">
+                  Description
+                </th>
+                <th class="border border-gray-300 p-2 bg-gray-200">County</th>
+                <th class="border border-gray-300 p-2 bg-gray-200">URL</th>
+                <th class="border border-gray-300 p-2 bg-gray-200">City</th>
+                <th class="border border-gray-300 p-2 bg-gray-200">Zip</th>
+              </tr>
+            </thead>
+            <tbody id="results2" class="text-sm"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      var occupants = [];
+      var allResults = [];
+      window.onload = function () {
+        var processedData = JSON.parse(localStorage.getItem("addresses"));
+        processAddresses(processedData);
+        var cardContainer = document.getElementById("cardContainer");
+      };
+      var processedCoords = {};
+
+      function getCoordinates(address) {
+        var geocoder = new google.maps.Geocoder();
+
+        geocoder.geocode({ address: address }, function (results, status) {
+          if (status === "OK") {
+            var location = results[0].geometry.location;
+            var lat = roundCoord(location.lat());
+            var lng = roundCoord(location.lng());
+            var coordKey = lat + "," + lng;
+
+            if (processedCoords[coordKey]) {
+              displayResults(address, lat, lng, processedCoords[coordKey]);
+            } else {
+              findStores(lat, lng, address, coordKey);
+            }
+          } else {
+            console.error("Geocode 失败: " + status);
+          }
+        });
+      }
+
+      function roundCoord(number) {
+        return Math.round(number * 10000) / 10000;
+      }
+
+      function findStores(lat, lng, address, coordKey) {
+        var service = new google.maps.places.PlacesService(
+          document.createElement("div")
+        );
+
+        service.nearbySearch(
+          {
+            location: { lat: lat, lng: lng },
+            radius: 200,
+          },
+          function (results, status, pag) {
+            if (status === google.maps.places.PlacesServiceStatus.OK) {
+              allResults = allResults.concat(results);
+
+              if (pag.hasNextPage) {
+                setTimeout(() => pag.nextPage(), 2000);
+              } else {
+                results = allResults;
+
+                const number = address.split(/\s+/)[0];
+
+                const regex = new RegExp(`\\b${number}\\b`, "i");
+
+                const filteredResults = allResults.filter((result) =>
+                  regex.test(result.vicinity)
+                );
+
+                if (filteredResults.length === 0) return;
+
+                processedCoords[coordKey] = filteredResults;
+                displayResults(address, lat, lng, filteredResults);
+              }
+            }
+          }
+        );
+      }
+
+      function exportToCSV() {
+        var dataTable = document.getElementById("dataTable");
+        var rows = dataTable.rows;
+        var csvContent = "data:text/csv;charset=utf-8,";
+
+        for (var i = 0; i < rows.length; i++) {
+          var cols = rows[i].querySelectorAll("td, th");
+          var rowData = [];
+
+          for (var j = 0; j < cols.length; j++) {
+            var text = cols[j].innerText
+              .replace(/(\r\n|\n|\r)/gm, " ")
+              .replace(/(\s+)/gm, " ");
+            rowData.push('"' + text + '"');
+          }
+
+          csvContent += rowData.join(",") + "\r\n";
+        }
+
+        var encodedUri = encodeURI(csvContent);
+        var link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "exported_data.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+
+      function processFile() {
+        var fileInput = document.getElementById("fileInput");
+        var file = fileInput.files[0];
+        var reader = new FileReader();
+
+        reader.onload = function (e) {
+          var contents = e.target.result;
+          processAddresses(contents);
+        };
+
+        reader.readAsText(file);
+      }
+
+      function processAddresses(contents) {
+        document.getElementById("results").innerHTML = "";
+        document.getElementById("results2").innerHTML = "";
+
+        var addresses = contents.split("\n");
+        addresses.forEach(function (address, index) {
+          if (index != 0) getRows(address);
+
+          if (address.trim() !== "") {
+            getCoordinates(address.trim());
+          }
+        });
+      }
+
+      function getRows(address) {
+        searchAddress2(address)
+          .then((data) => {
+            occupants.push(...data);
+            console.log("Found matching rows:", occupants);
+            displaySecondaryTable(data, address);
+          })
+          .catch((error) => {
+            console.error(error);
+          });
+      }
+
+      function displayResults(address, lat, lng, stores) {
+        var resultsTable = document.getElementById("results");
+
+        var cardContainer = document.getElementById("cardContainer");
+
+        var cleanAddress = address.replace(/["',]/g, "");
+
+        stores.forEach(function (store, index) {
+          var row = resultsTable.insertRow(-1);
+
+          var addressCell = row.insertCell(0);
+          addressCell.innerHTML =
+            index === 0
+              ? address +
+                "<br><span class='text-gray-600'>(" +
+                lat +
+                ", " +
+                lng +
+                ")</span>"
+              : "";
+          addressCell.className = "border p-2 align-top";
+
+          var storeNameCell = row.insertCell(1);
+          storeNameCell.innerHTML = "<div>" + store.name + "</div>";
+          storeNameCell.className = "border p-2 align-top";
+
+          var storeAddressCell = row.insertCell(2);
+          storeAddressCell.innerHTML =
+            "<div>" + (store.vicinity || "N/A") + "</div>";
+          storeAddressCell.className = "border p-2 align-top";
+
+          var storeTagsCell = row.insertCell(3);
+          storeTagsCell.innerHTML =
+            "<div>" + (store.types ? store.types.join(", ") : "N/A") + "</div>";
+          storeTagsCell.className = "border p-2 align-top";
+
+          var storeCoordsCell = row.insertCell(4);
+          storeCoordsCell.innerHTML =
+            "<div>" +
+            store.geometry.location.lat() +
+            ", " +
+            store.geometry.location.lng() +
+            "</div>";
+          storeCoordsCell.className = "border p-2 align-top";
+          var businessStatusCell = row.insertCell(5);
+          businessStatusCell.innerHTML =
+            "<div>" +
+            (store.business_status ? store.business_status : "N/A") +
+            "</div>";
+          businessStatusCell.className = "border p-2 align-top";
+        });
+
+        if (stores.length === 0) {
+          var row = resultsTable.insertRow(-1);
+          var addressCell = row.insertCell(0);
+          addressCell.innerHTML =
+            address +
+            "<br><span class='text-gray-600'>(" +
+            lat +
+            ", " +
+            lng +
+            ")</span>";
+          addressCell.className = "border p-2";
+          row.insertCell(1);
+          row.insertCell(2);
+          row.insertCell(3);
+          row.insertCell(4);
+        }
+      }
+
+      function displaySecondaryTable(data, address) {
+        var resultsTable2 = document.getElementById("results2");
+
+        data.forEach((item, index) => {
+          let totalRentalRate = 0;
+          let count = 0;
+          let allUponRequest = true;
+
+          for (let i = 1; i <= 82; i++) {
+            let spaceKey = `available space ${i} : Space`;
+            let rentalRateKey = `available space ${i} : Rental Rate`;
+
+            if (
+              item[spaceKey] &&
+              item[spaceKey] !== "N/A" &&
+              item[rentalRateKey] !== "Upon Request"
+            ) {
+              let rentalRateStr = item[rentalRateKey];
+              let rentalRate = parseFloat(
+                rentalRateStr.replace(/[^0-9.]/g, "")
+              );
+              if (!isNaN(rentalRate)) {
+                totalRentalRate += rentalRate;
+                count++;
+                allUponRequest = false;
+              }
+            } else if (item[rentalRateKey] !== "Upon Request") {
+              allUponRequest = false;
+            }
+          }
+
+          if (allUponRequest) {
+            alert(`Item ${index + 1}: All rental rates are "Upon Request"`);
+          } else if (count > 0) {
+            let averageRentalRate = totalRentalRate / count;
+            console.log(
+              `Item ${
+                index + 1
+              }: Average Rental Rate: $${averageRentalRate.toFixed(2)} /SF/YR`
+            );
+          } else {
+            console.log(`Item ${index + 1}: No valid Rental Rates`);
+          }
+        });
+      }
+
+      function toggleModal() {
+        var modal = document.getElementById("modal");
+        modal.classList.toggle("hidden");
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Find Nearby Businesses</title>
+
+    <script
+      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDJpECFECrlCJGhwE6nDY6DRvnWni8xFp0&libraries=places,geometry&callback=initMap&language=en"
+      async
+      defer
+    ></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <script src="./js/main.js"></script>
+    <style>
+      .total-count {
+        margin-left: 10px;
+      }
+    </style>
+    <script>
+      let map;
+      let service;
+      let infowindow;
+      let markers = [];
+      let panorama;
+
+      let datarows = [];
+      let allResults = [];
+      let pagination;
+      let totalCount = 0;
+
+      function initMap() {
+        var address = JSON.parse(localStorage.getItem("location"));
+
+        searchAddress2(address.formatted_address)
+          .then((data) => {
+            console.log("Found matching rows:", data);
+            datarows = data;
+            displayCardList(data, true);
+            totalCount += data.length;
+            updateTotalCountDisplay();
+          })
+          .catch((error) => {
+            console.error(error);
+          });
+
+        setTimeout(() => {
+          searchPlacesWithPlace(address);
+        }, 1500);
+
+        map = new google.maps.Map(document.getElementById("map"), {
+          center: { lat: -33.867, lng: 151.206 },
+          zoom: 15,
+        });
+
+        panorama = new google.maps.StreetViewPanorama(
+          document.getElementById("pano"),
+          {
+            position: { lat: -33.867, lng: 151.206 },
+            pov: { heading: 165, pitch: 0 },
+            zoom: 1,
+          }
+        );
+        map.setStreetView(panorama);
+
+        infowindow = new google.maps.InfoWindow();
+        service = new google.maps.places.PlacesService(map);
+
+        const addressInput = document.getElementById("address");
+        addressInput.value = address.formatted_address;
+
+        const autocomplete = new google.maps.places.Autocomplete(addressInput, {
+          types: ["geocode"],
+        });
+
+        autocomplete.addListener("place_changed", function () {
+          const place = autocomplete.getPlace();
+
+          if (!place.geometry) {
+            alert("No details available for input: '" + place.name + "'");
+            return;
+          }
+
+          searchPlacesWithPlace(place);
+        });
+      }
+
+      function searchPlacesWithPlace(place) {
+        const centerLocation = place.geometry.location;
+        map.setCenter(centerLocation);
+        panorama.setPosition(centerLocation);
+        createCenterMarker(centerLocation);
+
+        const radius = calculateRadius(map.getBounds());
+        searchNearbyBusinesses(centerLocation, null, radius);
+      }
+
+      function clearBusinessList() {
+        const listDiv = document.getElementById("business-list");
+        listDiv.innerHTML = "";
+      }
+
+      function clearNonOccupantBusinesses() {
+        const listDiv = document.getElementById("business-list");
+        const children = Array.from(listDiv.children);
+        children.forEach((child) => {
+          if (!child.classList.contains("occupant")) {
+            listDiv.removeChild(child);
+          }
+        });
+      }
+      function searchPlaces() {
+        clearNonOccupantBusinesses();
+
+        clearMarkers();
+        const addressInput = document.getElementById("address").value;
+        if (!addressInput) {
+          alert("Entry Address");
+          return;
+        }
+
+        const addressElement = document.getElementById("address");
+        if (addressElement) {
+          const autocomplete = new google.maps.places.Autocomplete(
+            addressElement,
+            {
+              types: ["geocode"],
+            }
+          );
+
+          autocomplete.addListener("place_changed", function () {
+            const place = autocomplete.getPlace();
+
+            if (!place.geometry) {
+              alert("No details available for input: '" + place.name + "'");
+              return;
+            }
+
+            searchPlacesWithPlace(place);
+          });
+        } else {
+          console.error("Address input element not found.");
+        }
+      }
+
+      function createCenterMarker(location) {
+        const centerMarker = new google.maps.Marker({
+          map: map,
+          position: location,
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: "#F00",
+            fillOpacity: 0.4,
+            strokeWeight: 0,
+          },
+        });
+
+        markers.push(centerMarker);
+      }
+
+      function calculateRadius(viewport) {
+        var sw = viewport.getSouthWest();
+        var ne = viewport.getNorthEast();
+        var diagonalDistance =
+          google.maps.geometry.spherical.computeDistanceBetween(sw, ne);
+        var radius = diagonalDistance / 4;
+
+        var maxRadius = 500;
+        return Math.min(radius, maxRadius);
+      }
+
+      function createMarker(place) {
+        const marker = new google.maps.Marker({
+          map: map,
+          position: place.geometry.location,
+        });
+
+        google.maps.event.addListener(marker, "click", function () {
+          infowindow.setContent(place.name);
+          infowindow.open(map, this);
+          panorama.setPosition(place.geometry.location);
+
+          document.querySelectorAll(".detail").forEach(function (item) {
+            item.classList.remove("highlight");
+          });
+          const detailDiv = document.getElementById(`place-${place.place_id}`);
+          if (detailDiv) {
+            const detailsStyle = window.getComputedStyle(
+              detailDiv.parentElement
+            );
+            const isHidden = detailsStyle.display === "none";
+            if (isHidden) {
+              document
+                .querySelectorAll(".details")
+                .forEach((div) => (div.style.display = "none"));
+              document
+                .querySelectorAll(".business-header")
+                .forEach((header) => header.classList.remove("active"));
+
+              detailDiv.parentElement.style.display = "block";
+              detailDiv.parentElement.previousElementSibling.classList.add(
+                "active"
+              );
+            } else {
+              detailDiv.parentElement.style.display = "none";
+              detailDiv.parentElement.previousElementSibling.classList.remove(
+                "active"
+              );
+            }
+            detailDiv.classList.add("highlight");
+          }
+        });
+
+        markers.push(marker);
+      }
+
+      function clearMarkers() {
+        markers.forEach((marker) => marker.setMap(null));
+        markers = [];
+        document.getElementById("business-list").innerHTML = "";
+      }
+
+      function searchNearbyBusinesses(location) {
+        const request = {
+          location: location,
+          radius: "200",
+        };
+
+        service.nearbySearch(request, function (results, status, pag) {
+          if (status === google.maps.places.PlacesServiceStatus.OK) {
+            allResults = allResults.concat(results);
+
+            if (pag.hasNextPage) {
+              setTimeout(() => pag.nextPage(), 2000);
+            } else {
+              processAllResults();
+            }
+          }
+        });
+      }
+
+      function processAllResults() {
+        const addressInput = document.getElementById("address").value;
+
+        const numberMatch = addressInput.match(/\b\d+\b/);
+        if (!numberMatch) {
+          console.log("No number found in the address.");
+          return;
+        }
+        const number = numberMatch[0];
+
+        const regex = new RegExp(`\\b${number}\\b`, "i");
+
+        const filteredResults = allResults.filter((result) =>
+          regex.test(result.vicinity)
+        );
+
+        filteredResults.forEach(createMarker);
+        displayBusinessList(filteredResults, true);
+        totalCount += filteredResults.length;
+        updateTotalCountDisplay();
+      }
+
+      function displayBusinessList(places, append = false) {
+        const listDiv = document.getElementById("business-list");
+
+        const addresses = {};
+
+        places.forEach((place) => {
+          const cleanedVicinity = place.vicinity.replace(/,\s*套房\s*\d+/, "");
+          if (!addresses[cleanedVicinity]) {
+            addresses[cleanedVicinity] = [];
+          }
+          addresses[cleanedVicinity].push;
+          addresses[cleanedVicinity].push(place);
+        });
+        for (const address in addresses) {
+          const countDiv = document.createElement("div");
+          countDiv.className = "business-header";
+
+          countDiv.innerHTML = `<strong>${address}</strong> <br/> Number : ${addresses[address].length}<br>`;
+          countDiv.onclick = function () {
+            this.classList.toggle("active");
+            const details = this.nextElementSibling;
+            if (details.style.display === "block") {
+              details.style.display = "none";
+            } else {
+              details.innerHTML = "";
+              addresses[address].forEach((place) => {
+                const detail = document.createElement("div");
+                detail.className = "detail";
+                detail.id = `place-${place.place_id}`;
+                detail.innerHTML = `
+  <strong>${place.name}</strong>
+  <div>${getTypeTags(place.types)}</div>
+  <div class="status">Status: ${place.business_status}</div>
+`;
+                details.appendChild(detail);
+              });
+              details.style.display = "block";
+            }
+          };
+          listDiv.appendChild(countDiv);
+
+          const detailsDiv = document.createElement("div");
+          detailsDiv.className = "details";
+          countDiv.onclick = function () {
+            this.classList.toggle("active");
+            detailsDiv.style.display =
+              detailsDiv.style.display === "block" ? "none" : "block";
+          };
+          listDiv.appendChild(detailsDiv);
+
+          addresses[address].forEach((place) => {
+            const detail = document.createElement("div");
+            detail.className = "detail";
+            detail.id = `place-${place.place_id}`;
+
+            detail.innerHTML = `
+<strong>${place.name}</strong>
+<div>${getTypeTags(place.types)}</div>
+<div class="status">Status: ${place.business_status}</div>
+`;
+            detailsDiv.appendChild(detail);
+          });
+          listDiv.appendChild(detailsDiv);
+        }
+      }
+
+      function displayCardList(places, append = false) {
+        let totalRentalRate = 0;
+        let count = 0;
+        let allUponRequest = true;
+
+        let yearBuilt = null;
+        let parktype = null;
+        let maxContiguous = null;
+        let totalSpaceAvailable = null;
+        let buildingHeight = null;
+        let parking = null;
+        const listDiv = document.getElementById("business-list");
+
+        const addresses = {};
+
+        places.forEach((place) => {
+          const cleanedVicinity = "Occupants";
+          const c = JSON.parse(JSON.stringify(place));
+          if (!addresses[cleanedVicinity]) {
+            addresses[cleanedVicinity] = [];
+          }
+          addresses[cleanedVicinity].push(c);
+        });
+
+        for (const address in addresses) {
+          const countDiv = document.createElement("div");
+          countDiv.className = "business-header occupant";
+
+          countDiv.innerHTML = `<strong>${address}</strong> <br/> Number : ${addresses[address].length}<br>`;
+          countDiv.onclick = function () {
+            this.classList.toggle("active");
+            const details = this.nextElementSibling;
+            if (details.style.display === "block") {
+              details.style.display = "none";
+            } else {
+              details.innerHTML = "";
+              addresses[address].forEach((place) => {
+                const detail = document.createElement("div");
+                detail.className = "detail occupant";
+                detail.id = `place-${place.AIRPORT}`;
+                detail.innerHTML = `
+<strong>${place.Address}</strong>
+<div>${getTypeTags(place.State)}</div>
+<div class="status">Status: ${place.business_status}</div>
+`;
+                details.appendChild(detail);
+              });
+              details.style.display = "block";
+            }
+          };
+          listDiv.appendChild(countDiv);
+
+          const detailsDiv = document.createElement("div");
+          detailsDiv.className = "details occupant";
+          countDiv.onclick = function () {
+            this.classList.toggle("active");
+            detailsDiv.style.display =
+              detailsDiv.style.display === "block" ? "none" : "block";
+          };
+          listDiv.appendChild(detailsDiv);
+
+          addresses[address].forEach((place) => {
+            const detail = document.createElement("div");
+            detail.className = "detail occupant";
+            detail.id = `place-${place.place_id}`;
+
+            for (let i = 1; i <= 82; i++) {
+              let spaceKey = `available space ${i} : Space`;
+              let rentalRateKey = `available space ${i} : Rental Rate`;
+              if (
+                place[spaceKey] &&
+                place[spaceKey] !== "N/A" &&
+                place[rentalRateKey] !== "Upon Request"
+              ) {
+                let rentalRateStr = place[rentalRateKey];
+                let rentalRate = parseFloat(
+                  rentalRateStr.replace(/[^0-9.]/g, "")
+                );
+                if (!isNaN(rentalRate)) {
+                  totalRentalRate += rentalRate;
+                  count++;
+                  allUponRequest = false;
+                }
+              } else if (place[rentalRateKey] !== "Upon Request") {
+                allUponRequest = false;
+              }
+              console.log(count, totalRentalRate);
+            }
+
+            const buildingDetails = `
+<div><strong>Building Details:</strong></div>
+<div>Year Built: ${place["Property Facts: YearBuilt"] || "vacancies"}</div>
+<div>Property Type: ${
+              place["Property Facts: PropertyType"] || "vacancies"
+            }</div>
+<div>Max Contiguous: ${
+              place["Property Facts: MaxContiguous"] || "vacancies"
+            }</div>
+<div>Building Height: ${
+              place["Property Facts: BuildingHeight"] || "vacancies"
+            }</div>
+<div>Parking: ${place["Property Facts: Parking"] || "vacancies"}</div>
+<div>Average Rental Rate: $${
+              totalRentalRate / count || "Upon Request"
+            }  /SF/YR</div>
+<div>Space Use: ${
+              place["Property Facts: TotalSpaceAvailable"] || "vacancies"
+            }</div>
+<div>Available Space Count: ${count || "vacancies"}</div>
+`;
+
+            detail.innerHTML = `
+${buildingDetails}
+ `;
+            detailsDiv.appendChild(detail);
+          });
+          listDiv.appendChild(detailsDiv);
+        }
+      }
+      function getTypeTags(types) {
+        if (!types) return '<span class="tag tag-default">UnKnow Type</span>';
+
+        return types
+          .map((type) => {
+            if (type === "point_of_interest") return null;
+
+            const className =
+              `tag tag-${type}` in colorClasses
+                ? `tag tag-${type}`
+                : "tag tag-default";
+            return `<span class="${className}">${type}</span>`;
+          })
+          .join(" ");
+      }
+
+      const colorClasses = {
+        "tag tag-restaurant": true,
+        "tag tag-cafe": true,
+        "tag tag-bar": true,
+        "tag tag-hotel": true,
+        "tag tag-store": true,
+        "tag tag-default": true,
+      };
+
+      function expandAll() {
+        document.querySelectorAll(".details").forEach((details) => {
+          details.style.display = "block";
+        });
+      }
+
+      function updateTotalCountDisplay() {
+        const totalCountDiv = document.getElementById("total-count");
+        if (!totalCountDiv) {
+          const newTotalCountDiv = document.createElement("div");
+          newTotalCountDiv.id = "total-count";
+          newTotalCountDiv.className = "total-count";
+          // newTotalCountDiv.className =
+          // "p-2 bg-blue-500 hover:bg-blue-700 text-white rounded text-sm";
+
+          newTotalCountDiv.innerHTML = `<strong>Total Count: ${totalCount}</strong>`;
+          document.body.insertBefore(
+            newTotalCountDiv,
+            document.querySelector(".container")
+          );
+        } else {
+          totalCountDiv.innerHTML = `<strong>Total Count: ${totalCount}</strong>`;
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", function () {
+        var urlParams = new URLSearchParams(window.location.search);
+        var keyword = urlParams.get("keyword");
+
+        if (keyword) {
+          console.log("Search keyword:", keyword);
+          document.getElementById("address").value = keyword;
+        }
+
+        const buttonContainer = document.createElement("div");
+        buttonContainer.className = "flex space-x-2 mb-4";
+
+        const expandAllButton = document.createElement("button");
+        expandAllButton.textContent = "Expand All";
+        expandAllButton.onclick = expandAll;
+        expandAllButton.className =
+          "p-2 bg-blue-500 hover:bg-blue-700 text-white rounded text-sm";
+
+        const collapseAllButton = document.createElement("button");
+        collapseAllButton.textContent = "Collapse All";
+        collapseAllButton.onclick = function () {
+          document.querySelectorAll(".details").forEach((details) => {
+            details.style.display = "none";
+          });
+        };
+        collapseAllButton.className =
+          "p-2 bg-red-500 hover:bg-red-700 text-white rounded text-sm";
+
+        buttonContainer.appendChild(expandAllButton);
+        buttonContainer.appendChild(collapseAllButton);
+
+        document.body.insertBefore(
+          buttonContainer,
+          document.querySelector(".container")
+        );
+      });
+
+      function expandAll() {
+        document.querySelectorAll(".details").forEach((details) => {
+          details.style.display = "block";
+        });
+      }
+    </script>
+
+    <link rel="stylesheet" type="text/css" href="./css/keyword.css" />
+  </head>
+
+  <body class="flex flex-col items-center">
+    <input
+      id="address"
+      type="text"
+      placeholder="Entry Address"
+      class="mb-4 p-2 border rounded"
+    />
+    <button
+      onclick="searchPlaces()"
+      class="mb-4 p-2 bg-blue-500 text-white rounded"
+    >
+      Search
+    </button>
+    <div class="container flex flex-col items-center">
+      <div id="map" class="mb-4 w-full h-96"></div>
+      <div id="pano" class="mb-4 w-full h-96"></div>
+      <div id="business-list" class="mb-4 w-full"></div>
+    </div>
+  </body>
+</html>

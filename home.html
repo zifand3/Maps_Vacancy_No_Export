@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Main Page</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
+  <link href="./css/search.css" rel="stylesheet" />
+  <script
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDJpECFECrlCJGhwE6nDY6DRvnWni8xFp0&libraries=places,geometry&language=en"
+    async defer></script>
+
+  <!-- <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDJpECFECrlCJGhwE6nDY6DRvnWni8xFp0&libraries=places,geometry&callback=initMap&language=en" async defer></script> -->
+  <style>
+    body {
+      height: 100vh;
+      background-image: url("images/bg.jpg");
+      background-repeat: no-repeat;
+      background-size: cover;
+      background-position: center;
+    }
+
+    .logo {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    .semi-transparent {
+      background-color: rgba(255,
+          255,
+          255,
+          0.5);
+      /* Adjust transparency as needed */
+    }
+
+    .shadow-custom {
+      box-shadow: 0 1px 6px 0 rgba(32, 33, 36, 0.28);
+      /* Google-like shadow */
+    }
+  </style>
+</head>
+
+<body class="bg-gray-100 p-8">
+  <div
+    class="max-w-lg mx-auto bg-white bg-opacity-50 shadow-custom rounded-lg p-6 flex flex-col items-center space-y-4">
+
+    <img src="images/logo.png" alt="Logo" class="w-48" />
+
+    <div class="flex flex-row justify-between items-center">
+      <div class="searchbar">
+        <div class="searchbar-wrapper">
+          <div class="searchbar-left">
+            <div class="search-icon-wrapper">
+              <span class="search-icon searchbar-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <path
+                    d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z">
+                  </path>
+                </svg>
+              </span>
+            </div>
+          </div>
+
+          <div class="searchbar-center">
+            <div class="searchbar-input-spacer"></div>
+            <input type="file" id="fileInput" style="display:none;" onchange="processAndRedirect()">
+
+            <input type="text" class="searchbar-input" maxlength="2048" name="q" autocapitalize="off" autocomplete="off"
+              title="Search" role="combobox" placeholder="Upload csv file" disabled>
+          </div>
+        </div>
+      </div>
+
+      <button onclick="document.getElementById('fileInput').click()"
+        class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" style="background-color: #007ace;">
+        Upload
+      </button>
+
+      <!-- <button onclick="processAndRedirect()"
+        class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" style="background-color: #007ace;">
+        Upload
+      </button> -->
+    </div>
+    <div class="flex flex-row justify-between items-center">
+
+      <div class="searchbar">
+        <div class="searchbar-wrapper">
+          <div class="searchbar-left">
+            <div class="search-icon-wrapper">
+              <span class="search-icon searchbar-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                  <path
+                    d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z">
+                  </path>
+                </svg>
+              </span>
+            </div>
+          </div>
+
+          <div class="searchbar-center">
+            <div class="searchbar-input-spacer"></div>
+            <input id="autocomplete" type="text" class="searchbar-input" placeholder="Enter address">
+
+            <!-- <input id="autocomplete" type="text" class="searchbar-input" placeholder="Enter address"> -->
+            <!-- <input type="text" class="searchbar-input" maxlength="2048" name="q" autocapitalize="off" autocomplete="off"               title="Search" role="combobox" placeholder="Enter address" id="autocomplete">  -->
+          </div>
+
+        </div>
+      </div>
+      <button onclick="searchKeyword()" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded"
+        style="background-color: #ff7f00;" /* Adjust color to match logo * />
+      Search
+      </button>
+    </div>
+  </div>
+
+  <script>
+    function processAndRedirect() {
+      var fileInput = document.getElementById("fileInput");
+      var file = fileInput.files[0];
+      if (!file) {
+        alert("Please select a file first!");
+        return;
+      }
+
+      var reader = new FileReader();
+
+      reader.onload = function (e) {
+        var contents = e.target.result;
+        var addresses = contents;
+
+        localStorage.setItem("addresses", JSON.stringify(addresses));
+
+        window.location.href = "csv.html";
+      };
+
+      reader.readAsText(file);
+    }
+
+  
+    function searchKeyword() {
+      var searchInput = document.getElementById("searchInput");
+      var keyword = searchInput.value;
+      if (keyword.trim() === "") {
+        alert("Please enter a keyword.");
+        return;
+      }
+
+      window.location.href =
+        "keyword2.html?keyword=" + encodeURIComponent(keyword);
+    }
+
+
+  </script>
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      var autocompleteInput = document.getElementById('autocomplete');
+
+      if (autocompleteInput) {
+        var autocomplete = new google.maps.places.Autocomplete(autocompleteInput, { types: ['geocode'] });
+
+        autocomplete.addListener('place_changed', function () {
+          var place = autocomplete.getPlace();
+          console.log(place);
+          if (!place.geometry) {
+            alert("No details available for input: '" + place.name + "'");
+            return;
+          }
+
+          console.log(place);
+          localStorage.setItem("location", JSON.stringify(place))
+
+          var url = 'keyword.html';
+          window.location.href = url;
+        });
+
+
+
+      }
+    });
+  </script>
+
+</body>
+
+</html>
